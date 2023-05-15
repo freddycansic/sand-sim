@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Rust Application - Windows",
+            "program": "${workspaceRoot}/target/debug/${workspaceFolderBasename}",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "rust: cargo build",
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "openOnSessionStart",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Debug Rust Application - Linux",
+            "program": "${workspaceRoot}/target/debug/${workspaceFolderBasename}",
+            "type": "lldb",
+            "request": "launch",
+            "preLaunchTask": "rust: cargo build",
+            "cwd": "${workspaceRoot}",
+            "internalConsoleOptions": "openOnSessionStart",
+            "console": "integratedTerminal",
+        }
+    ]
+}
