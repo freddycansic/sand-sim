@@ -916,17 +916,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pixels-test"
-version = "0.1.0"
-dependencies = [
- "enum-iterator",
- "fastrand",
- "pixels",
- "winit",
- "winit_input_helper",
-]
-
-[[package]]
 name = "pkg-config"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1040,6 +1029,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "794821e4ccb0d9f979512f9c1973480123f9bd62a90d74ab0f9426fcf8f4a529"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "sand-sim"
+version = "0.1.0"
+dependencies = [
+ "enum-iterator",
+ "fastrand",
+ "pixels",
+ "winit",
+ "winit_input_helper",
 ]
 
 [[package]]
