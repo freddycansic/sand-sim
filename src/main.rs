@@ -20,16 +20,19 @@ const HEIGHT: usize = 300;
 const MAX_FPS: u32 = 999999;
 const TIME_PER_FRAME_MICROSECONDS: u64 = (1_000_000.0 / MAX_FPS as f32) as u64;
 const ACCELERATION: f32 = 0.2;
-const TERMINAL_VELOCITY: f32 = 3.0;
+const MAX_VELOCITY: f32 = 10.0;
 
-const SMOKE_LIFETIME: u32 = 300;
+const SMOKE_MAX_VELOCITY: f32 = 2.0;
+const SMOKE_ACCELERATION: f32 = 0.1;
+
+const SMOKE_LIFETIME: u32 = 100;
 
 const AIR_COLOR: [u8; 4] = [0x00, 0x00, 0x00, 0xff];
 const SAND_COLORS: [[u8; 4]; 4] = [
     [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
+    [0xdb, 0xd1, 0xb4, 0xff],
+    [0xb1, 0x9d, 0x5e, 0xff],
+    [0xca, 0xbc, 0x91, 0xff],
 ];
 const WATER_COLORS: [[u8; 4]; 4] = [
     [0x23, 0x89, 0xda, 0xff],
@@ -190,11 +193,11 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
 }
 
 fn update_sand(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    generic_fall(cells, x, y, empty_types, false, rng);
+    generic_fall(cells, x, y, empty_types, MAX_VELOCITY, ACCELERATION, false, rng);
 }
 
 fn update_water(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    generic_fluid(cells, x, y, empty_types, false, rng)
+    generic_fluid(cells, x, y, empty_types, MAX_VELOCITY, ACCELERATION, false, rng)
 }
 
 fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
@@ -203,8 +206,8 @@ fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
         return;
     }
 
-    cells[x][y].lifetime -= rng.u32(1..10).min(cells[x][y].lifetime);
-    generic_fluid(cells, x, y, empty_types, true, rng)
+    cells[x][y].lifetime -= 1;
+    generic_fluid(cells, x, y, empty_types, SMOKE_MAX_VELOCITY, SMOKE_ACCELERATION, true, rng)
 }
 
 fn generic_fluid(
@@ -212,11 +215,13 @@ fn generic_fluid(
     x: usize,
     y: usize,
     empty_types: &[CellType],
+    max_velocity: f32,
+    acceleration: f32,
     inverted: bool,
     rng: &Rng,
 ) {
     // todo something like: if the cell has a low velocity falling down then randomly spread to the side, will stop some water cells standing on top of others without spreading i think
-    if generic_fall(cells, x, y, &empty_types, inverted, rng) {
+    if generic_fall(cells, x, y, &empty_types, max_velocity, acceleration, inverted, rng) {
         return;
     }
 
@@ -243,6 +248,8 @@ fn generic_fall(
     x: usize,
     y: usize,
     fall_through_types: &[CellType],
+    max_velocity: f32,
+    acceleration: f32,
     inverted: bool,
     rng: &Rng,
 ) -> bool {
@@ -256,7 +263,7 @@ fn generic_fall(
         fall_through_types,
         (0, down),
     ) {
-        cells[x][y].velocity = (cells[x][y].velocity + ACCELERATION).min(TERMINAL_VELOCITY);
+        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
         swap_cells(cells, (x, y), furthest_down);
 
         return true;
@@ -281,20 +288,20 @@ fn generic_fall(
 
     if furthest_down_left.is_some() && furthest_down_right.is_some() {
         if rng.bool() {
-            cells[x][y].velocity = (cells[x][y].velocity + ACCELERATION).min(TERMINAL_VELOCITY);
+            cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
             swap_cells(cells, (x, y), furthest_down_left.unwrap());
         } else {
-            cells[x][y].velocity = (cells[x][y].velocity + ACCELERATION).min(TERMINAL_VELOCITY);
+            cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
             swap_cells(cells, (x, y), furthest_down_right.unwrap());
         }
 
         return true;
     } else if furthest_down_left.is_some() {
-        cells[x][y].velocity = (cells[x][y].velocity + ACCELERATION).min(TERMINAL_VELOCITY);
+        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
         swap_cells(cells, (x, y), furthest_down_left.unwrap());
         return true;
     } else if furthest_down_right.is_some() {
-        cells[x][y].velocity = (cells[x][y].velocity + ACCELERATION).min(TERMINAL_VELOCITY);
+        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
         swap_cells(cells, (x, y), furthest_down_right.unwrap());
         return true;
     }
@@ -350,7 +357,7 @@ fn furthest_by_vector(
         // else {
         //     break
         // }
-    }
+    }   
 
     closest
 }
@@ -476,22 +483,16 @@ fn to_1d_index_pixel_buffer(x: usize, y: usize) -> usize {
     y * WIDTH * 4 + x * 4
 }
 
-fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], max_lifetime: u32, current_lifetime: u32) -> [u8; 4] {
-    let color_difference = [
-        color_1[0] - color_2[0],
-        color_1[1] - color_2[1],
-        color_1[2] - color_2[2],
-        color_1[3] - color_2[3],
-    ];
+fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], factor: f32) -> [u8; 4] {
+    let r_difference = color_1[0] as f32 - color_2[0] as f32;    
+    let g_difference = color_1[1] as f32 - color_2[1] as f32;    
+    let b_difference = color_1[2] as f32 - color_2[2] as f32;
 
-    let percentage = current_lifetime as f32 / max_lifetime as f32;
-
-    todo!();
     [
-        (color_1[0] + ((color_difference[0] as f32 * percentage) as u8).min(color_1[0])).min(0xff),
-        (color_1[1] + ((color_difference[1] as f32 * percentage) as u8).min(color_1[1])).min(0xff),
-        (color_1[2] + ((color_difference[2] as f32 * percentage) as u8).min(color_1[2])).min(0xff),
-        (color_1[3] + ((color_difference[3] as f32 * percentage) as u8).min(color_1[3])).min(0xff)
+        (r_difference * factor + color_2[0] as f32) as u8,
+        (g_difference * factor + color_2[1] as f32) as u8,
+        (b_difference * factor + color_2[2] as f32) as u8,
+        0xff,
     ]
 }
 
@@ -507,17 +508,18 @@ fn cell_type_color_fixed(cell_type: CellType, rng: &Rng) -> [u8; 4] {
 }
 
 fn cell_type_color_dynamic(cell: &Cell, rng: &Rng) -> [u8; 4] {
+    // todo!("Add color field to every cell");
     match cell.ty {
-        // CellType::Sand => SAND_COLORS[rng.usize(0..SAND_COLORS.len())],
         CellType::Sand => SAND_COLORS[0],
-        // CellType::Water => WATER_COLORS[rng.usize(0..SAND_COLORS.len())],
+        // CellType::Sand => SAND_COLORS[rng.usize(0..SAND_COLORS.len())],
         CellType::Water => WATER_COLORS[0],
+        // CellType::Water => WATER_COLORS[rng.usize(0..SAND_COLORS.len())],
         CellType::Air => AIR_COLOR,
-        // CellType::Wood => WOOD_COLORS[rng.usize(0..SAND_COLORS.len())],
         CellType::Wood => WOOD_COLORS[0],
-        // CellType::Fire => FIRE_COLORS[rng.usize(0..SAND_COLORS.len())],
+        // CellType::Wood => WOOD_COLORS[rng.usize(0..SAND_COLORS.len())],
         CellType::Fire => FIRE_COLORS[0],
-        CellType::Smoke => interpolate_color(&SMOKE_COLOR_LIGHT, &SMOKE_COLOR_DARK, SMOKE_LIFETIME, cell.lifetime),
+        // CellType::Fire => FIRE_COLORS[rng.usize(0..SAND_COLORS.len())],
+        CellType::Smoke => interpolate_color(&SMOKE_COLOR_LIGHT, &SMOKE_COLOR_DARK, cell.lifetime as f32 / SMOKE_LIFETIME as f32),
     }
 }
 
