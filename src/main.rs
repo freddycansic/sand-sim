@@ -36,24 +36,24 @@ const SAND_COLORS: [[u8; 4]; 4] = [
 ];
 const WATER_COLORS: [[u8; 4]; 4] = [
     [0x23, 0x89, 0xda, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
+    [0x23, 0x89, 0xda, 0xff],
+    [0x23, 0x89, 0xda, 0xff],
+    [0x23, 0x89, 0xda, 0xff],
 ];
 const WOOD_COLORS: [[u8; 4]; 4] = [
     [0x50, 0x29, 0x00, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
+    [0x50, 0x29, 0x00, 0xff],
+    [0x50, 0x29, 0x00, 0xff],
+    [0x50, 0x29, 0x00, 0xff],
 ];
 const FIRE_COLORS: [[u8; 4]; 4] = [
     [0xc3, 0x3e, 0x05, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xf2, 0xd2, 0xa9, 0xff],
+    [0xc3, 0x3e, 0x05, 0xff],
+    [0xc3, 0x3e, 0x05, 0xff],
+    [0xc3, 0x3e, 0x05, 0xff],
 ];
+
 const SMOKE_COLOR_LIGHT: [u8; 4] = [0x84, 0x88, 0x84, 0xff];
-// const SMOKE_COLOR_DARK: [u8; 4] = [0x10, 0x11, 0x11, 0xff];
 const SMOKE_COLOR_DARK: [u8; 4] = [0x00, 0x00, 0x00, 0xff];
 
 #[derive(PartialEq, Default, Clone, Copy, Sequence)]
@@ -67,22 +67,29 @@ enum CellType {
     Smoke,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone)]
 struct Cell {
     ty: CellType,
     moved: bool,
     velocity: f32,
     lifetime: u32,
+    color: [u8; 4],
 }
 
-impl From<CellType> for Cell {
-    fn from(cell_type: CellType) -> Self {
-        Self {
+impl Cell {
+    fn from(cell_type: CellType, rng: &Rng) -> Self {
+        let mut cell = Cell {
             ty: cell_type,
             moved: false,
             velocity: 1.0,
-            lifetime: 0,
-        }
+            lifetime: cell_type_lifetime(cell_type),
+            color: [0; 4],
+        };
+
+        // HEEELPPPPPPPP!
+        cell.color = cell_type_color_dynamic(&cell, rng);
+
+        cell
     }
 }
 
@@ -116,7 +123,7 @@ fn update_cell(i: usize, cells: &mut [Vec<Cell>], x: usize, y: usize, rng: &Rng)
         return;
     }
 
-    let cell = cells[x][y];
+    let cell = &cells[x][y];
 
     if cell.moved {
         return;
@@ -181,33 +188,55 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
     }
 
     cells[x][y] = if rng.f32() < 0.125 {
-        Cell {
-            ty: CellType::Smoke,
-            lifetime: SMOKE_LIFETIME,
-            moved: false,
-            velocity: 1.0,
-        }
+        Cell::from(CellType::Smoke, rng)
     } else {
-        Cell::from(CellType::Air)
+        Cell::from(CellType::Air, rng)
     };
 }
 
 fn update_sand(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    generic_fall(cells, x, y, empty_types, MAX_VELOCITY, ACCELERATION, false, rng);
+    generic_fall(
+        cells,
+        x,
+        y,
+        empty_types,
+        MAX_VELOCITY,
+        ACCELERATION,
+        false,
+        rng,
+    );
 }
 
 fn update_water(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    generic_fluid(cells, x, y, empty_types, MAX_VELOCITY, ACCELERATION, false, rng)
+    generic_fluid(
+        cells,
+        x,
+        y,
+        empty_types,
+        MAX_VELOCITY,
+        ACCELERATION,
+        false,
+        rng,
+    )
 }
 
 fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
     if cells[x][y].lifetime <= 0 {
-        cells[x][y] = Cell::from(CellType::Air);
+        cells[x][y] = Cell::from(CellType::Air, rng);
         return;
     }
 
     cells[x][y].lifetime -= 1;
-    generic_fluid(cells, x, y, empty_types, SMOKE_MAX_VELOCITY, SMOKE_ACCELERATION, true, rng)
+    generic_fluid(
+        cells,
+        x,
+        y,
+        empty_types,
+        SMOKE_MAX_VELOCITY,
+        SMOKE_ACCELERATION,
+        true,
+        rng,
+    )
 }
 
 fn generic_fluid(
@@ -221,7 +250,16 @@ fn generic_fluid(
     rng: &Rng,
 ) {
     // todo something like: if the cell has a low velocity falling down then randomly spread to the side, will stop some water cells standing on top of others without spreading i think
-    if generic_fall(cells, x, y, &empty_types, max_velocity, acceleration, inverted, rng) {
+    if generic_fall(
+        cells,
+        x,
+        y,
+        &empty_types,
+        max_velocity,
+        acceleration,
+        inverted,
+        rng,
+    ) {
         return;
     }
 
@@ -313,15 +351,15 @@ fn generic_fall(
 }
 
 fn swap_cells(cells: &mut [Vec<Cell>], cell_1_pos: (usize, usize), cell_2_pos: (usize, usize)) {
-    let temp_cell = cells[cell_1_pos.0][cell_1_pos.1];
-    cells[cell_1_pos.0][cell_1_pos.1] = cells[cell_2_pos.0][cell_2_pos.1];
+    let temp_cell = cells[cell_1_pos.0][cell_1_pos.1].clone();
+    cells[cell_1_pos.0][cell_1_pos.1] = cells[cell_2_pos.0][cell_2_pos.1].clone();
     cells[cell_2_pos.0][cell_2_pos.1] = temp_cell;
     cells[cell_1_pos.0][cell_1_pos.1].moved = false;
     cells[cell_2_pos.0][cell_2_pos.1].moved = true;
 }
 
 fn spread_to_cell(cells: &mut [Vec<Cell>], cell_1_pos: (usize, usize), cell_2_pos: (usize, usize)) {
-    cells[cell_2_pos.0][cell_2_pos.1] = cells[cell_1_pos.0][cell_1_pos.1];
+    cells[cell_2_pos.0][cell_2_pos.1] = cells[cell_1_pos.0][cell_1_pos.1].clone();
     cells[cell_2_pos.0][cell_2_pos.1].moved = true;
     cells[cell_1_pos.0][cell_1_pos.1].moved = true;
 }
@@ -357,7 +395,7 @@ fn furthest_by_vector(
         // else {
         //     break
         // }
-    }   
+    }
 
     closest
 }
@@ -391,7 +429,7 @@ fn in_bounds(x: isize, y: isize) -> bool {
         && in_bounds_right(x as usize)
 }
 
-fn draw_menu(frame: &mut [u8], selected_cell_type: CellType, rng: &Rng) {
+fn draw_menu(frame: &mut [u8], selected_cell_type: CellType) {
     let starting = (3, 3);
     let spacing = 3;
     let square_size = 15;
@@ -407,7 +445,7 @@ fn draw_menu(frame: &mut [u8], selected_cell_type: CellType, rng: &Rng) {
                 ),
                 square_size + 2,
                 &[0xff, 0xea, 0x00, 0xff],
-                Some(&cell_type_color_fixed(cell_type, rng)),
+                Some(&cell_type_color_fixed(cell_type)),
             );
         } else {
             draw_square(
@@ -418,7 +456,7 @@ fn draw_menu(frame: &mut [u8], selected_cell_type: CellType, rng: &Rng) {
                 ),
                 square_size,
                 &[0xff, 0xff, 0xff, 0xff],
-                Some(&cell_type_color_fixed(cell_type, rng)),
+                Some(&cell_type_color_fixed(cell_type)),
             );
         }
     }
@@ -484,8 +522,8 @@ fn to_1d_index_pixel_buffer(x: usize, y: usize) -> usize {
 }
 
 fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], factor: f32) -> [u8; 4] {
-    let r_difference = color_1[0] as f32 - color_2[0] as f32;    
-    let g_difference = color_1[1] as f32 - color_2[1] as f32;    
+    let r_difference = color_1[0] as f32 - color_2[0] as f32;
+    let g_difference = color_1[1] as f32 - color_2[1] as f32;
     let b_difference = color_1[2] as f32 - color_2[2] as f32;
 
     [
@@ -496,7 +534,9 @@ fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], factor: f32) -> [u8; 
     ]
 }
 
-fn cell_type_color_fixed(cell_type: CellType, rng: &Rng) -> [u8; 4] {
+fn cell_type_color_fixed(cell_type: CellType) -> [u8; 4] {
+    // return [0xff, 0xff, 0xff, 0xff];
+
     match cell_type {
         CellType::Sand => SAND_COLORS[0],
         CellType::Water => WATER_COLORS[0],
@@ -508,18 +548,23 @@ fn cell_type_color_fixed(cell_type: CellType, rng: &Rng) -> [u8; 4] {
 }
 
 fn cell_type_color_dynamic(cell: &Cell, rng: &Rng) -> [u8; 4] {
+    // return [0xff, 0xff, 0xff, 0xff];
     // todo!("Add color field to every cell");
     match cell.ty {
-        CellType::Sand => SAND_COLORS[0],
-        // CellType::Sand => SAND_COLORS[rng.usize(0..SAND_COLORS.len())],
-        CellType::Water => WATER_COLORS[0],
-        // CellType::Water => WATER_COLORS[rng.usize(0..SAND_COLORS.len())],
+        // CellType::Sand => SAND_COLORS[0],
+        CellType::Sand => SAND_COLORS[rng.usize(0..SAND_COLORS.len())],
+        // CellType::Water => WATER_COLORS[0],
+        CellType::Water => WATER_COLORS[rng.usize(0..WATER_COLORS.len())],
         CellType::Air => AIR_COLOR,
-        CellType::Wood => WOOD_COLORS[0],
-        // CellType::Wood => WOOD_COLORS[rng.usize(0..SAND_COLORS.len())],
-        CellType::Fire => FIRE_COLORS[0],
-        // CellType::Fire => FIRE_COLORS[rng.usize(0..SAND_COLORS.len())],
-        CellType::Smoke => interpolate_color(&SMOKE_COLOR_LIGHT, &SMOKE_COLOR_DARK, cell.lifetime as f32 / SMOKE_LIFETIME as f32),
+        // CellType::Wood => WOOD_COLORS[0],
+        CellType::Wood => WOOD_COLORS[rng.usize(0..WOOD_COLORS.len())],
+        // CellType::Fire => FIRE_COLORS[0],
+        CellType::Fire => FIRE_COLORS[rng.usize(0..FIRE_COLORS.len())],
+        CellType::Smoke => interpolate_color(
+            &SMOKE_COLOR_LIGHT,
+            &SMOKE_COLOR_DARK,
+            cell.lifetime as f32 / SMOKE_LIFETIME as f32,
+        ),
     }
 }
 
@@ -535,22 +580,18 @@ fn draw_frame(
     cells: &[Vec<Cell>],
     selected_cell_type: CellType,
     cursor_position: (usize, usize),
-    cursor_radius: f32,
-    rng: &Rng
+    cursor_radius: f32
 ) {
     let frame = pixels.frame_mut();
     let mut pixels = frame.chunks_exact_mut(4);
 
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
-            pixels
-                .next()
-                .unwrap()
-                .copy_from_slice(&cell_type_color_dynamic(&cells[x][y], rng));
+            pixels.next().unwrap().copy_from_slice(&cells[x][y].color);
         }
     }
 
-    draw_menu(frame, selected_cell_type, rng);
+    draw_menu(frame, selected_cell_type);
     draw_cursor(frame, cursor_position, cursor_radius);
 }
 
@@ -564,21 +605,6 @@ fn put_cell(
     let cursor_position = (cursor_position.0 as i32, cursor_position.1 as i32);
     let cursor_radius = cursor_radius as i32;
 
-    let cell = match selected_cell_type {
-        CellType::Smoke => Cell {
-            ty: selected_cell_type,
-            lifetime: SMOKE_LIFETIME,
-            moved: false,
-            velocity: 1.0,
-        },
-        _ => Cell {
-            ty: selected_cell_type,
-            lifetime: 0,
-            moved: false,
-            velocity: 1.0,
-        },
-    };
-
     for x in ((cursor_position.0 - cursor_radius).max(0))
         ..((cursor_position.0 + cursor_radius).min(WIDTH as i32))
     {
@@ -586,26 +612,28 @@ fn put_cell(
             ..((cursor_position.1 + cursor_radius).min(HEIGHT as i32))
         {
             if (cursor_position.0 - x).pow(2) + (cursor_position.1 - y).pow(2)
-                <= cursor_radius.pow(2)
+                > cursor_radius.pow(2)
             {
-                match selected_cell_type {
-                    CellType::Sand | CellType::Water | CellType::Fire | CellType::Smoke => {
-                        if rng.f32() > 0.125 {
-                            continue;
-                        }
-                    }
-                    _ => (),
-                }
+                continue;
+            }
 
-                // place cells only in fluids
-                if is_empty(
-                    cells,
-                    x as usize,
-                    y as usize,
-                    &[CellType::Air, CellType::Water],
-                ) {
-                    cells[x as usize][y as usize] = cell;
+            match selected_cell_type {
+                CellType::Sand | CellType::Water | CellType::Fire | CellType::Smoke => {
+                    if rng.f32() > 0.125 {
+                        continue;
+                    }
                 }
+                _ => (),
+            }
+
+            // place cells only in fluids
+            if is_empty(
+                cells,
+                x as usize,
+                y as usize,
+                &[CellType::Air, CellType::Water, CellType::Smoke],
+            ) {
+                cells[x as usize][y as usize] = Cell::from(selected_cell_type, rng)
             }
         }
     }
@@ -633,11 +661,11 @@ fn main() {
         Pixels::new(WIDTH as u32, HEIGHT as u32, surface_texture).unwrap()
     };
 
-    let mut cells = vec![vec![Cell::from(CellType::Air); HEIGHT]; WIDTH];
+    let rng = Rng::new();
+    let mut cells = vec![vec![Cell::from(CellType::Air, &rng); HEIGHT]; WIDTH];
     let mut cursor_radius = 3_f32;
     let mut cursor_position = (0, 0);
     let mut current_cell_type = CellType::Sand;
-    let rng = Rng::new();
     let mut last_redraw = Instant::now()
         .checked_sub(Duration::from_micros(TIME_PER_FRAME_MICROSECONDS))
         .unwrap();
@@ -661,8 +689,7 @@ fn main() {
                     &cells,
                     current_cell_type,
                     cursor_position,
-                    cursor_radius,
-                    &rng
+                    cursor_radius
                 );
                 update_cells(&mut cells, &rng);
 
