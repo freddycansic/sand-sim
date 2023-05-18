@@ -24,37 +24,54 @@ const MAX_VELOCITY: f32 = 10.0;
 
 const SMOKE_MAX_VELOCITY: f32 = 2.0;
 const SMOKE_ACCELERATION: f32 = 0.1;
+const STEAM_MAX_VELOCITY: f32 = 2.0;
+const STEAM_ACCELERATION: f32 = 0.1;
 
 const SMOKE_LIFETIME: u32 = 100;
+const STEAM_LIFETIME: u32 = 50;
 
-const AIR_COLOR: [u8; 4] = [0x00, 0x00, 0x00, 0xff];
-const SAND_COLORS: [[u8; 4]; 4] = [
-    [0xf2, 0xd2, 0xa9, 0xff],
-    [0xdb, 0xd1, 0xb4, 0xff],
-    [0xb1, 0x9d, 0x5e, 0xff],
-    [0xca, 0xbc, 0x91, 0xff],
+const AIR_COLOR: [u8; 3] = [0x00, 0x00, 0x00];
+const SAND_COLORS: [[u8; 3]; 4] = [
+    [0xf6, 0xd7, 0xb0],
+    [0xf2, 0xd2, 0xa9],
+    [0xec, 0xcc, 0xa2],
+    [0xe7, 0xc4, 0x96],
 ];
-const WATER_COLORS: [[u8; 4]; 4] = [
-    [0x23, 0x89, 0xda, 0xff],
-    [0x23, 0x89, 0xda, 0xff],
-    [0x23, 0x89, 0xda, 0xff],
-    [0x23, 0x89, 0xda, 0xff],
+const WATER_COLORS: [[u8; 3]; 4] = [
+    [0x18, 0x56, 0xdc],
+    [0x1f, 0x59, 0xd6],
+    [0x25, 0x5b, 0xd0],
+    [0x27, 0x5c, 0xcd],
 ];
-const WOOD_COLORS: [[u8; 4]; 4] = [
-    [0x50, 0x29, 0x00, 0xff],
-    [0x50, 0x29, 0x00, 0xff],
-    [0x50, 0x29, 0x00, 0xff],
-    [0x50, 0x29, 0x00, 0xff],
+const WOOD_COLORS: [[u8; 3]; 4] = [
+    [0x77, 0x4f, 0x3c],
+    [0x71, 0x4b, 0x39],
+    [0x6b, 0x47, 0x36],
+    [0x65, 0x43, 0x33]
 ];
-const FIRE_COLORS: [[u8; 4]; 4] = [
-    [0xc3, 0x3e, 0x05, 0xff],
-    [0xc3, 0x3e, 0x05, 0xff],
-    [0xc3, 0x3e, 0x05, 0xff],
-    [0xc3, 0x3e, 0x05, 0xff],
+const FIRE_COLORS: [[u8; 3]; 6] = [
+    // weighted colors = more red less yellow
+    // reds
+    [0xc3, 0x3e, 0x05],
+    [0xc3, 0x3e, 0x05],
+    [0xc2, 0x34, 0x05],
+    [0xc2, 0x34, 0x05],
+    
+    // yellow orange
+    [0xf9, 0x61, 0x1f],
+    [0xf0, 0xa1, 0x2b],
 ];
+const SMOKE_COLOR_LIGHT: [u8; 3] = [0x47, 0x47, 0x47];
+const SMOKE_COLOR_DARK: [u8; 3] = [0x00, 0x00, 0x00];
+const STEAM_COLOR_LIGHT: [u8; 3] = [0xf5, 0xf5, 0xf5];
+const STEAM_COLOR_DARK: [u8; 3] = [0x00, 0x00, 0x00];
 
-const SMOKE_COLOR_LIGHT: [u8; 4] = [0x84, 0x88, 0x84, 0xff];
-const SMOKE_COLOR_DARK: [u8; 4] = [0x00, 0x00, 0x00, 0xff];
+#[derive(Clone, Copy)]
+struct CellMoveResult {
+    moved_to_type: CellType,
+    x: usize,
+    y: usize
+}
 
 #[derive(PartialEq, Default, Clone, Copy, Sequence)]
 enum CellType {
@@ -65,6 +82,7 @@ enum CellType {
     Wood,
     Fire,
     Smoke,
+    Steam
 }
 
 #[derive(PartialEq, Clone)]
@@ -73,7 +91,7 @@ struct Cell {
     moved: bool,
     velocity: f32,
     lifetime: u32,
-    color: [u8; 4],
+    color: [u8; 3],
 }
 
 impl Cell {
@@ -83,11 +101,11 @@ impl Cell {
             moved: false,
             velocity: 1.0,
             lifetime: cell_type_lifetime(cell_type),
-            color: [0; 4],
+            color: [0; 3],
         };
 
         // HEEELPPPPPPPP!
-        cell.color = cell_type_color_dynamic(&cell, rng);
+        cell.color = cell_type_color_random(&cell, rng);
 
         cell
     }
@@ -130,10 +148,11 @@ fn update_cell(i: usize, cells: &mut [Vec<Cell>], x: usize, y: usize, rng: &Rng)
     }
 
     match cell.ty {
-        CellType::Sand => update_sand(cells, x, y, &[CellType::Air, CellType::Water], rng),
-        CellType::Water => update_water(cells, x, y, &[CellType::Air], rng),
+        CellType::Sand => update_sand(cells, x, y, &[CellType::Air, CellType::Water, CellType::Steam, CellType::Smoke], rng),
+        CellType::Water => update_water(cells, x, y, &[CellType::Air, CellType::Steam, CellType::Smoke], rng),
         CellType::Fire => update_fire(cells, x, y, &[CellType::Wood], rng),
         CellType::Smoke => update_smoke(cells, x, y, &[CellType::Air], rng),
+        CellType::Steam => update_steam(cells, x, y, &[CellType::Air], rng),
         _ => (),
     }
 }
@@ -144,18 +163,22 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
     }
 
     if in_bounds_left(x as isize - 1) && is_empty(cells, x - 1, y, &burn_types) {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x - 1, y))
     }
 
     if in_bounds_right(x + 1) && is_empty(cells, x + 1, y, &burn_types) {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x + 1, y))
     }
 
     if in_bounds_top(y as isize - 1) && is_empty(cells, x, y - 1, &burn_types) {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x, y - 1))
     }
 
     if in_bounds_bottom(y + 1) && is_empty(cells, x, y + 1, &burn_types) {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x, y + 1))
     }
 
@@ -163,6 +186,7 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
         && in_bounds_top(y as isize - 1)
         && is_empty(cells, x - 1, y - 1, &burn_types)
     {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x - 1, y - 1))
     }
 
@@ -170,6 +194,7 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
         && in_bounds_bottom(y + 1)
         && is_empty(cells, x - 1, y + 1, &burn_types)
     {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x - 1, y + 1))
     }
 
@@ -177,6 +202,7 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
         && in_bounds_top(y as isize - 1)
         && is_empty(cells, x + 1, y - 1, &burn_types)
     {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x + 1, y - 1))
     }
 
@@ -184,6 +210,7 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
         && in_bounds_bottom(y + 1)
         && is_empty(cells, x + 1, y + 1, &burn_types)
     {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
         spread_to_cell(cells, (x, y), (x + 1, y + 1))
     }
 
@@ -208,6 +235,10 @@ fn update_sand(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellT
 }
 
 fn update_water(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
+    if rng.f32() < 0.125 && cells[x][y].velocity < 0.1 {
+        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+    }
+
     generic_fluid(
         cells,
         x,
@@ -227,6 +258,13 @@ fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
     }
 
     cells[x][y].lifetime -= 1;
+
+    cells[x][y].color = interpolate_color(
+        &SMOKE_COLOR_LIGHT,
+        &SMOKE_COLOR_DARK,
+        cells[x][y].lifetime as f32 / SMOKE_LIFETIME as f32,
+    );
+
     generic_fluid(
         cells,
         x,
@@ -234,6 +272,32 @@ fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
         empty_types,
         SMOKE_MAX_VELOCITY,
         SMOKE_ACCELERATION,
+        true,
+        rng,
+    )
+}
+
+fn update_steam(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
+    if cells[x][y].lifetime <= 0 {
+        cells[x][y] = Cell::from(CellType::Air, rng);
+        return;
+    }
+
+    cells[x][y].lifetime -= 1;
+
+    cells[x][y].color = interpolate_color(
+        &STEAM_COLOR_LIGHT,
+        &STEAM_COLOR_DARK,
+        cells[x][y].lifetime as f32 / STEAM_LIFETIME as f32,
+    );
+
+    generic_fluid(
+        cells,
+        x,
+        y,
+        empty_types,
+        STEAM_MAX_VELOCITY,
+        STEAM_ACCELERATION,
         true,
         rng,
     )
@@ -268,16 +332,16 @@ fn generic_fluid(
     let furthest_left = furthest_by_vector(cells, x, y, spread_factor, &empty_types, (-1, 0));
     let furthest_right = furthest_by_vector(cells, x, y, spread_factor, &empty_types, (1, 0));
 
-    if furthest_left.is_some() && furthest_right.is_some() {
+    if let (Some(furthest_left), Some(furthest_right)) = (furthest_left, furthest_right) {
         if rng.bool() {
-            swap_cells(cells, (x, y), furthest_right.unwrap());
+            swap_cells(cells, (x, y), (furthest_right.x, furthest_right.y));
         } else {
-            swap_cells(cells, (x, y), furthest_left.unwrap());
+            swap_cells(cells, (x, y), (furthest_left.x, furthest_left.y));
         }
-    } else if furthest_left.is_some() {
-        swap_cells(cells, (x, y), furthest_left.unwrap());
-    } else if furthest_right.is_some() {
-        swap_cells(cells, (x, y), furthest_right.unwrap());
+    } else if let Some(furthest_left) = furthest_left {
+        swap_cells(cells, (x, y), (furthest_left.x, furthest_left.y));
+    } else if let Some(furthest_right) = furthest_right {
+        swap_cells(cells, (x, y), (furthest_right.x, furthest_right.y));
     }
 }
 
@@ -302,7 +366,8 @@ fn generic_fall(
         (0, down),
     ) {
         cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), furthest_down);
+        swap_cells(cells, (x, y), (furthest_down.x, furthest_down.y));
+        // todo swap current with furthest, then current with furthest - 1 = put whatever was in furthest on top of current
 
         return true;
     }
@@ -324,23 +389,23 @@ fn generic_fall(
         (1, down),
     );
 
-    if furthest_down_left.is_some() && furthest_down_right.is_some() {
+    if let (Some(furthest_down_left), Some(furthest_down_right)) = (furthest_down_left, furthest_down_right) {
         if rng.bool() {
             cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-            swap_cells(cells, (x, y), furthest_down_left.unwrap());
+            swap_cells(cells, (x, y), (furthest_down_left.x, furthest_down_left.y));
         } else {
             cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-            swap_cells(cells, (x, y), furthest_down_right.unwrap());
+            swap_cells(cells, (x, y), (furthest_down_right.x, furthest_down_right.y));
         }
 
         return true;
-    } else if furthest_down_left.is_some() {
+    } else if let Some(furthest_down_left) = furthest_down_left {
         cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), furthest_down_left.unwrap());
+        swap_cells(cells, (x, y), (furthest_down_left.x, furthest_down_left.y));
         return true;
-    } else if furthest_down_right.is_some() {
+    } else if let Some(furthest_down_right) = furthest_down_right {
         cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), furthest_down_right.unwrap());
+        swap_cells(cells, (x, y), (furthest_down_right.x, furthest_down_right.y));
         return true;
     }
 
@@ -375,7 +440,7 @@ fn furthest_by_vector(
     movement_magnitude: usize,
     empty_types: &[CellType],
     direction: (isize, isize),
-) -> Option<(usize, usize)> {
+) -> Option<CellMoveResult> {
     assert!(direction.0.abs() <= 1 && direction.1.abs() <= 1);
 
     let mut closest = None;
@@ -389,9 +454,13 @@ fn furthest_by_vector(
                 empty_types,
             )
         {
-            closest = Some((current_cell.0 as usize, current_cell.1 as usize));
+            closest = Some(CellMoveResult {
+                moved_to_type: cells[x][y].ty,
+                x: current_cell.0 as usize,
+                y: current_cell.1 as usize
+            });
         }
-        // not breaking causes clipping but breaking makes everything funny
+        // not breaking causes clipping but breaking makes everything funny. idc im doing it
         // else {
         //     break
         // }
@@ -434,7 +503,7 @@ fn draw_menu(frame: &mut [u8], selected_cell_type: CellType) {
     let spacing = 3;
     let square_size = 15;
 
-    // skip drawing the square for the air cell type
+    // skip 1 = skip drawing the square for the air cell type
     for (cell_type_index, cell_type) in all::<CellType>().skip(1).enumerate() {
         if selected_cell_type == cell_type {
             draw_square(
@@ -444,7 +513,7 @@ fn draw_menu(frame: &mut [u8], selected_cell_type: CellType) {
                     starting.0 + (spacing + square_size) * cell_type_index - 1,
                 ),
                 square_size + 2,
-                &[0xff, 0xea, 0x00, 0xff],
+                &[0xff, 0xea, 0x00],
                 Some(&cell_type_color_fixed(cell_type)),
             );
         } else {
@@ -455,7 +524,7 @@ fn draw_menu(frame: &mut [u8], selected_cell_type: CellType) {
                     starting.0 + (spacing + square_size) * cell_type_index,
                 ),
                 square_size,
-                &[0xff, 0xff, 0xff, 0xff],
+                &[0xff, 0xff, 0xff],
                 Some(&cell_type_color_fixed(cell_type)),
             );
         }
@@ -466,8 +535,8 @@ fn draw_square(
     frame: &mut [u8],
     top_left: (usize, usize),
     size: usize,
-    border_color: &[u8; 4],
-    fill_color: Option<&[u8; 4]>,
+    border_color: &[u8; 3],
+    fill_color: Option<&[u8; 3]>,
 ) {
     // unsafe function no bounds checking
     for y in 0..size {
@@ -505,15 +574,15 @@ fn draw_cursor(frame: &mut [u8], cursor_position: (usize, usize), cursor_radius:
 
         let frame_index = frame_index.unwrap() + 4;
 
-        write_to_pixel_buffer(frame, frame_index, &[0xe0, 0xe0, 0xe0, 0xe0])
+        write_to_pixel_buffer(frame, frame_index, &[0xe0, 0xe0, 0xe0])
     }
 }
 
-fn write_to_pixel_buffer(frame: &mut [u8], index: usize, color: &[u8; 4]) {
+fn write_to_pixel_buffer(frame: &mut [u8], index: usize, color: &[u8; 3]) {
     frame[index] = color[0];
     frame[index + 1] = color[1];
     frame[index + 2] = color[2];
-    frame[index + 3] = color[3];
+    frame[index + 3] = 0xff;
 }
 
 #[inline(always)]
@@ -521,7 +590,7 @@ fn to_1d_index_pixel_buffer(x: usize, y: usize) -> usize {
     y * WIDTH * 4 + x * 4
 }
 
-fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], factor: f32) -> [u8; 4] {
+fn interpolate_color(color_1: &[u8; 3], color_2: &[u8; 3], factor: f32) -> [u8; 3] {
     let r_difference = color_1[0] as f32 - color_2[0] as f32;
     let g_difference = color_1[1] as f32 - color_2[1] as f32;
     let b_difference = color_1[2] as f32 - color_2[2] as f32;
@@ -530,13 +599,11 @@ fn interpolate_color(color_1: &[u8; 4], color_2: &[u8; 4], factor: f32) -> [u8; 
         (r_difference * factor + color_2[0] as f32) as u8,
         (g_difference * factor + color_2[1] as f32) as u8,
         (b_difference * factor + color_2[2] as f32) as u8,
-        0xff,
     ]
 }
 
-fn cell_type_color_fixed(cell_type: CellType) -> [u8; 4] {
-    // return [0xff, 0xff, 0xff, 0xff];
-
+// fn for the cell type picker menu
+fn cell_type_color_fixed(cell_type: CellType) -> [u8; 3] {
     match cell_type {
         CellType::Sand => SAND_COLORS[0],
         CellType::Water => WATER_COLORS[0],
@@ -544,33 +611,26 @@ fn cell_type_color_fixed(cell_type: CellType) -> [u8; 4] {
         CellType::Wood => WOOD_COLORS[0],
         CellType::Fire => FIRE_COLORS[0],
         CellType::Smoke => SMOKE_COLOR_LIGHT,
+        CellType::Steam => STEAM_COLOR_LIGHT,
     }
 }
 
-fn cell_type_color_dynamic(cell: &Cell, rng: &Rng) -> [u8; 4] {
-    // return [0xff, 0xff, 0xff, 0xff];
-    // todo!("Add color field to every cell");
+fn cell_type_color_random(cell: &Cell, rng: &Rng) -> [u8; 3] {
     match cell.ty {
-        // CellType::Sand => SAND_COLORS[0],
         CellType::Sand => SAND_COLORS[rng.usize(0..SAND_COLORS.len())],
-        // CellType::Water => WATER_COLORS[0],
         CellType::Water => WATER_COLORS[rng.usize(0..WATER_COLORS.len())],
         CellType::Air => AIR_COLOR,
-        // CellType::Wood => WOOD_COLORS[0],
         CellType::Wood => WOOD_COLORS[rng.usize(0..WOOD_COLORS.len())],
-        // CellType::Fire => FIRE_COLORS[0],
         CellType::Fire => FIRE_COLORS[rng.usize(0..FIRE_COLORS.len())],
-        CellType::Smoke => interpolate_color(
-            &SMOKE_COLOR_LIGHT,
-            &SMOKE_COLOR_DARK,
-            cell.lifetime as f32 / SMOKE_LIFETIME as f32,
-        ),
+        CellType::Smoke => SMOKE_COLOR_LIGHT,
+        CellType::Steam => STEAM_COLOR_LIGHT,
     }
 }
 
 fn cell_type_lifetime(cell_type: CellType) -> u32 {
     match cell_type {
         CellType::Smoke => SMOKE_LIFETIME,
+        CellType::Steam => STEAM_LIFETIME,
         _ => 0,
     }
 }
@@ -580,14 +640,18 @@ fn draw_frame(
     cells: &[Vec<Cell>],
     selected_cell_type: CellType,
     cursor_position: (usize, usize),
-    cursor_radius: f32
+    cursor_radius: f32,
 ) {
     let frame = pixels.frame_mut();
     let mut pixels = frame.chunks_exact_mut(4);
 
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
-            pixels.next().unwrap().copy_from_slice(&cells[x][y].color);
+            let cell_color = &cells[x][y].color;
+
+            let color = [cell_color[0], cell_color[1], cell_color[2], 0xff];
+
+            pixels.next().unwrap().copy_from_slice(&color);
         }
     }
 
@@ -689,7 +753,7 @@ fn main() {
                     &cells,
                     current_cell_type,
                     cursor_position,
-                    cursor_radius
+                    cursor_radius,
                 );
                 update_cells(&mut cells, &rng);
 
@@ -752,6 +816,8 @@ fn main() {
                 current_cell_type = CellType::Fire;
             } else if input.key_pressed(VirtualKeyCode::Key5) {
                 current_cell_type = CellType::Smoke
+            } else if input.key_pressed(VirtualKeyCode::Key6) {
+                current_cell_type = CellType::Steam
             }
 
             let scroll_diff = input.scroll_diff();
