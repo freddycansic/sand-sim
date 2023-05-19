@@ -10,6 +10,8 @@ Set framerate limit using args. Default is vsync.
 
 `1` - `6` to select pixel type.
 
+`scroll` to change cursor size.
+
 ### Example
 
 ![image](https://github.com/freddycansic/sand-sim/assets/93549743/822f5619-2c7b-4b7d-8708-6253630a5947)
