@@ -17,8 +17,7 @@ use winit_input_helper::WinitInputHelper;
 
 const WIDTH: usize = 400;
 const HEIGHT: usize = 300;
-const MAX_FPS: u32 = 999999;
-const TIME_PER_FRAME_MICROSECONDS: u64 = (1_000_000.0 / MAX_FPS as f32) as u64;
+
 const ACCELERATION: f32 = 0.2;
 const MAX_VELOCITY: f32 = 10.0;
 
@@ -825,8 +824,17 @@ fn main() {
     let mut cursor_radius = 3_f32;
     let mut cursor_position = (0, 0);
     let mut current_cell_type = CellType::Sand;
+
+    let max_fps: u32 = if let Some(fps) = std::env::args().skip(1).next() {
+        fps.parse::<u32>().unwrap()
+    } else {
+        0
+    };
+
+    let time_per_frame_microseconds: u64 = (1_000_000.0 / max_fps as f32) as u64;
+
     let mut last_redraw = Instant::now()
-        .checked_sub(Duration::from_micros(TIME_PER_FRAME_MICROSECONDS))
+        .checked_sub(Duration::from_micros(time_per_frame_microseconds))
         .unwrap();
 
     event_loop.run(move |event, _, control_flow| {
@@ -840,7 +848,7 @@ fn main() {
             let elapsed = last_redraw.elapsed().as_micros() as u64;
             let delta_time_microseconds = Instant::now().duration_since(last_redraw).as_micros();
 
-            if elapsed > TIME_PER_FRAME_MICROSECONDS || MAX_FPS == 0 {
+            if elapsed > time_per_frame_microseconds || max_fps == 0 {
                 last_redraw = Instant::now();
 
                 draw_frame(
@@ -864,7 +872,7 @@ fn main() {
             };
 
             let deadline = last_redraw
-                .checked_add(Duration::from_micros(TIME_PER_FRAME_MICROSECONDS))
+                .checked_add(Duration::from_micros(time_per_frame_microseconds))
                 .unwrap();
             *control_flow = ControlFlow::WaitUntil(deadline);
         }
