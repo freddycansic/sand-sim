@@ -47,7 +47,7 @@ const WOOD_COLORS: [[u8; 3]; 4] = [
     [0x77, 0x4f, 0x3c],
     [0x71, 0x4b, 0x39],
     [0x6b, 0x47, 0x36],
-    [0x65, 0x43, 0x33]
+    [0x65, 0x43, 0x33],
 ];
 const FIRE_COLORS: [[u8; 3]; 6] = [
     // weighted colors = more red less yellow
@@ -56,7 +56,6 @@ const FIRE_COLORS: [[u8; 3]; 6] = [
     [0xc3, 0x3e, 0x05],
     [0xc2, 0x34, 0x05],
     [0xc2, 0x34, 0x05],
-    
     // yellow orange
     [0xf9, 0x61, 0x1f],
     [0xf0, 0xa1, 0x2b],
@@ -65,13 +64,6 @@ const SMOKE_COLOR_LIGHT: [u8; 3] = [0x47, 0x47, 0x47];
 const SMOKE_COLOR_DARK: [u8; 3] = [0x00, 0x00, 0x00];
 const STEAM_COLOR_LIGHT: [u8; 3] = [0xf5, 0xf5, 0xf5];
 const STEAM_COLOR_DARK: [u8; 3] = [0x00, 0x00, 0x00];
-
-#[derive(Clone, Copy)]
-struct CellMoveResult {
-    moved_to_type: CellType,
-    x: usize,
-    y: usize
-}
 
 #[derive(PartialEq, Default, Clone, Copy, Sequence)]
 enum CellType {
@@ -82,7 +74,7 @@ enum CellType {
     Wood,
     Fire,
     Smoke,
-    Steam
+    Steam,
 }
 
 #[derive(PartialEq, Clone)]
@@ -148,8 +140,25 @@ fn update_cell(i: usize, cells: &mut [Vec<Cell>], x: usize, y: usize, rng: &Rng)
     }
 
     match cell.ty {
-        CellType::Sand => update_sand(cells, x, y, &[CellType::Air, CellType::Water, CellType::Steam, CellType::Smoke], rng),
-        CellType::Water => update_water(cells, x, y, &[CellType::Air, CellType::Steam, CellType::Smoke], rng),
+        CellType::Sand => update_sand(
+            cells,
+            x,
+            y,
+            &[
+                CellType::Air,
+                CellType::Water,
+                CellType::Steam,
+                CellType::Smoke,
+            ],
+            rng,
+        ),
+        CellType::Water => update_water(
+            cells,
+            x,
+            y,
+            &[CellType::Air, CellType::Steam, CellType::Smoke],
+            rng,
+        ),
         CellType::Fire => update_fire(cells, x, y, &[CellType::Wood], rng),
         CellType::Smoke => update_smoke(cells, x, y, &[CellType::Air], rng),
         CellType::Steam => update_steam(cells, x, y, &[CellType::Air], rng),
@@ -158,60 +167,125 @@ fn update_cell(i: usize, cells: &mut [Vec<Cell>], x: usize, y: usize, rng: &Rng)
 }
 
 fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellType], rng: &Rng) {
-    if rng.f32() > 0.5_f32.powf(6.0) {
+    let should_spread = rng.f32() < 0.5_f32.powf(6.0);
+
+    if in_bounds_left(x as isize - 1) {
+        let left_cell_type = cells[x - 1][y].ty;
+
+        if burn_types.contains(&left_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x - 1, y))
+            }
+        } else if left_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_right(x + 1) {
+        let right_cell_type = cells[x + 1][y].ty;
+
+        if burn_types.contains(&right_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x + 1, y))
+            }
+        } else if right_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_top(y as isize - 1) {
+        let top_cell_type = cells[x][y - 1].ty;
+
+        if burn_types.contains(&top_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x, y - 1))
+            }
+        } else if top_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_bottom(y + 1) {
+        let bottom_cell_type = cells[x][y + 1].ty;
+
+        if burn_types.contains(&bottom_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x, y + 1))
+            }
+        } else if bottom_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_left(x as isize - 1) && in_bounds_top(y as isize - 1) {
+        let top_left_cell_type = cells[x - 1][y - 1].ty;
+
+        if burn_types.contains(&top_left_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x - 1, y - 1))
+            }
+        } else if top_left_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_left(x as isize - 1) && in_bounds_bottom(y + 1) {
+        let bottom_left_cell_type = cells[x - 1][y + 1].ty;
+
+        if burn_types.contains(&bottom_left_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x - 1, y + 1))
+            }
+        } else if bottom_left_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_right(x + 1) && in_bounds_top(y as isize - 1) {
+        let top_right_cell_type = cells[x + 1][y - 1].ty;
+
+        if burn_types.contains(&top_right_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x + 1, y - 1))
+            }
+        } else if top_right_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if in_bounds_right(x + 1)
+        && in_bounds_bottom(y + 1)
+        && is_empty(cells, x + 1, y + 1, burn_types)
+    {
+        let bottom_right_cell_type = cells[x + 1][y + 1].ty;
+
+        if burn_types.contains(&bottom_right_cell_type) {
+            if should_spread {
+                cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
+                spread_to_cell(cells, (x, y), (x + 1, y + 1))
+            }
+        } else if bottom_right_cell_type == CellType::Water {
+            cells[x][y] = Cell::from(CellType::Steam, rng);
+            return;
+        }
+    }
+
+    if !should_spread {
         return;
-    }
-
-    if in_bounds_left(x as isize - 1) && is_empty(cells, x - 1, y, &burn_types) {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x - 1, y))
-    }
-
-    if in_bounds_right(x + 1) && is_empty(cells, x + 1, y, &burn_types) {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x + 1, y))
-    }
-
-    if in_bounds_top(y as isize - 1) && is_empty(cells, x, y - 1, &burn_types) {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x, y - 1))
-    }
-
-    if in_bounds_bottom(y + 1) && is_empty(cells, x, y + 1, &burn_types) {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x, y + 1))
-    }
-
-    if in_bounds_left(x as isize - 1)
-        && in_bounds_top(y as isize - 1)
-        && is_empty(cells, x - 1, y - 1, &burn_types)
-    {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x - 1, y - 1))
-    }
-
-    if in_bounds_left(x as isize - 1)
-        && in_bounds_bottom(y + 1)
-        && is_empty(cells, x - 1, y + 1, &burn_types)
-    {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x - 1, y + 1))
-    }
-
-    if in_bounds_right(x + 1)
-        && in_bounds_top(y as isize - 1)
-        && is_empty(cells, x + 1, y - 1, &burn_types)
-    {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x + 1, y - 1))
-    }
-
-    if in_bounds_right(x + 1)
-        && in_bounds_bottom(y + 1)
-        && is_empty(cells, x + 1, y + 1, &burn_types)
-    {
-        cells[x][y].color = cell_type_color_random(&cells[x][y], rng);
-        spread_to_cell(cells, (x, y), (x + 1, y + 1))
     }
 
     cells[x][y] = if rng.f32() < 0.125 {
@@ -224,8 +298,7 @@ fn update_fire(cells: &mut [Vec<Cell>], x: usize, y: usize, burn_types: &[CellTy
 fn update_sand(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
     generic_fall(
         cells,
-        x,
-        y,
+        (x, y),
         empty_types,
         MAX_VELOCITY,
         ACCELERATION,
@@ -241,18 +314,17 @@ fn update_water(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
 
     generic_fluid(
         cells,
-        x,
-        y,
+        (x, y),
         empty_types,
         MAX_VELOCITY,
         ACCELERATION,
         false,
         rng,
-    )
+    );
 }
 
 fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    if cells[x][y].lifetime <= 0 {
+    if cells[x][y].lifetime == 0 {
         cells[x][y] = Cell::from(CellType::Air, rng);
         return;
     }
@@ -267,19 +339,22 @@ fn update_smoke(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
 
     generic_fluid(
         cells,
-        x,
-        y,
+        (x, y),
         empty_types,
         SMOKE_MAX_VELOCITY,
         SMOKE_ACCELERATION,
         true,
         rng,
-    )
+    );
 }
 
 fn update_steam(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[CellType], rng: &Rng) {
-    if cells[x][y].lifetime <= 0 {
-        cells[x][y] = Cell::from(CellType::Air, rng);
+    if cells[x][y].lifetime == 0 {
+        if rng.f32() < 0.5_f32.powf(6.0) {
+            cells[x][y] = Cell::from(CellType::Water, rng)
+        } else {
+            cells[x][y] = Cell::from(CellType::Air, rng)
+        }
         return;
     }
 
@@ -293,126 +368,148 @@ fn update_steam(cells: &mut [Vec<Cell>], x: usize, y: usize, empty_types: &[Cell
 
     generic_fluid(
         cells,
-        x,
-        y,
+        (x, y),
         empty_types,
         STEAM_MAX_VELOCITY,
         STEAM_ACCELERATION,
         true,
         rng,
-    )
+    );
 }
 
 fn generic_fluid(
     cells: &mut [Vec<Cell>],
-    x: usize,
-    y: usize,
+    cell_pos: (usize, usize),
     empty_types: &[CellType],
     max_velocity: f32,
     acceleration: f32,
     inverted: bool,
     rng: &Rng,
-) {
+) -> Option<(usize, usize)> {
     // todo something like: if the cell has a low velocity falling down then randomly spread to the side, will stop some water cells standing on top of others without spreading i think
-    if generic_fall(
+    if let Some(fall_result) = generic_fall(
         cells,
-        x,
-        y,
-        &empty_types,
+        cell_pos,
+        empty_types,
         max_velocity,
         acceleration,
         inverted,
         rng,
     ) {
-        return;
+        return Some(fall_result);
     }
 
-    let spread_factor = (cells[x][y].velocity + 1.0) as usize;
+    let spread_factor = (cells[cell_pos.0][cell_pos.1].velocity + 1.0) as usize;
 
-    let furthest_left = furthest_by_vector(cells, x, y, spread_factor, &empty_types, (-1, 0));
-    let furthest_right = furthest_by_vector(cells, x, y, spread_factor, &empty_types, (1, 0));
+    let furthest_left = furthest_by_vector(cells, cell_pos, spread_factor, empty_types, (-1, 0));
+    let furthest_right = furthest_by_vector(cells, cell_pos, spread_factor, empty_types, (1, 0));
 
     if let (Some(furthest_left), Some(furthest_right)) = (furthest_left, furthest_right) {
         if rng.bool() {
-            swap_cells(cells, (x, y), (furthest_right.x, furthest_right.y));
+            swap_cells(cells, cell_pos, (furthest_right.0, furthest_right.1));
+            return Some(furthest_right);
         } else {
-            swap_cells(cells, (x, y), (furthest_left.x, furthest_left.y));
+            swap_cells(cells, cell_pos, (furthest_left.0, furthest_left.1));
+            return Some(furthest_left);
         }
     } else if let Some(furthest_left) = furthest_left {
-        swap_cells(cells, (x, y), (furthest_left.x, furthest_left.y));
+        swap_cells(cells, cell_pos, (furthest_left.0, furthest_left.1));
+        return Some(furthest_left);
     } else if let Some(furthest_right) = furthest_right {
-        swap_cells(cells, (x, y), (furthest_right.x, furthest_right.y));
+        swap_cells(cells, cell_pos, (furthest_right.0, furthest_right.1));
+        return Some(furthest_right);
     }
+
+    None
 }
 
 fn generic_fall(
     cells: &mut [Vec<Cell>],
-    x: usize,
-    y: usize,
+    cell_pos: (usize, usize),
     fall_through_types: &[CellType],
     max_velocity: f32,
     acceleration: f32,
     inverted: bool,
     rng: &Rng,
-) -> bool {
+) -> Option<(usize, usize)> {
     let down = if inverted { -1 } else { 1 };
 
     if let Some(furthest_down) = furthest_by_vector(
         cells,
-        x,
-        y,
-        cells[x][y].velocity as usize,
+        cell_pos,
+        cells[cell_pos.0][cell_pos.1].velocity as usize,
         fall_through_types,
         (0, down),
     ) {
-        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), (furthest_down.x, furthest_down.y));
+        cells[cell_pos.0][cell_pos.1].velocity =
+            (cells[cell_pos.0][cell_pos.1].velocity + acceleration).min(max_velocity);
+        swap_cells(cells, cell_pos, (furthest_down.0, furthest_down.1));
         // todo swap current with furthest, then current with furthest - 1 = put whatever was in furthest on top of current
 
-        return true;
+        return Some(furthest_down);
     }
 
     let furthest_down_left = furthest_by_vector(
         cells,
-        x,
-        y,
-        cells[x][y].velocity as usize,
+        cell_pos,
+        cells[cell_pos.0][cell_pos.1].velocity as usize,
         fall_through_types,
         (-1, down),
     );
     let furthest_down_right = furthest_by_vector(
         cells,
-        x,
-        y,
-        cells[x][y].velocity as usize,
+        cell_pos,
+        cells[cell_pos.0][cell_pos.1].velocity as usize,
         fall_through_types,
         (1, down),
     );
 
-    if let (Some(furthest_down_left), Some(furthest_down_right)) = (furthest_down_left, furthest_down_right) {
+    if let (Some(furthest_down_left), Some(furthest_down_right)) =
+        (furthest_down_left, furthest_down_right)
+    {
         if rng.bool() {
-            cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-            swap_cells(cells, (x, y), (furthest_down_left.x, furthest_down_left.y));
+            cells[cell_pos.0][cell_pos.1].velocity =
+                (cells[cell_pos.0][cell_pos.1].velocity + acceleration).min(max_velocity);
+            swap_cells(
+                cells,
+                cell_pos,
+                (furthest_down_left.0, furthest_down_left.1),
+            );
+            return Some(furthest_down_left);
         } else {
-            cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-            swap_cells(cells, (x, y), (furthest_down_right.x, furthest_down_right.y));
+            cells[cell_pos.0][cell_pos.1].velocity =
+                (cells[cell_pos.0][cell_pos.1].velocity + acceleration).min(max_velocity);
+            swap_cells(
+                cells,
+                cell_pos,
+                (furthest_down_right.0, furthest_down_right.1),
+            );
+            return Some(furthest_down_right);
         }
-
-        return true;
     } else if let Some(furthest_down_left) = furthest_down_left {
-        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), (furthest_down_left.x, furthest_down_left.y));
-        return true;
+        cells[cell_pos.0][cell_pos.1].velocity =
+            (cells[cell_pos.0][cell_pos.1].velocity + acceleration).min(max_velocity);
+        swap_cells(
+            cells,
+            cell_pos,
+            (furthest_down_left.0, furthest_down_left.1),
+        );
+        return Some(furthest_down_left);
     } else if let Some(furthest_down_right) = furthest_down_right {
-        cells[x][y].velocity = (cells[x][y].velocity + acceleration).min(max_velocity);
-        swap_cells(cells, (x, y), (furthest_down_right.x, furthest_down_right.y));
-        return true;
+        cells[cell_pos.0][cell_pos.1].velocity =
+            (cells[cell_pos.0][cell_pos.1].velocity + acceleration).min(max_velocity);
+        swap_cells(
+            cells,
+            cell_pos,
+            (furthest_down_right.0, furthest_down_right.1),
+        );
+        return Some(furthest_down_right);
     }
 
     // if we didnt move then turn down velocity
-    cells[x][y].velocity /= 2.0;
+    cells[cell_pos.0][cell_pos.1].velocity /= 2.0;
 
-    false
+    None
 }
 
 fn swap_cells(cells: &mut [Vec<Cell>], cell_1_pos: (usize, usize), cell_2_pos: (usize, usize)) {
@@ -435,17 +532,19 @@ fn is_empty(cells: &[Vec<Cell>], x: usize, y: usize, empty_types: &[CellType]) -
 
 fn furthest_by_vector(
     cells: &[Vec<Cell>],
-    x: usize,
-    y: usize,
+    cell_pos: (usize, usize),
     movement_magnitude: usize,
     empty_types: &[CellType],
     direction: (isize, isize),
-) -> Option<CellMoveResult> {
+) -> Option<(usize, usize)> {
     assert!(direction.0.abs() <= 1 && direction.1.abs() <= 1);
 
     let mut closest = None;
     for i in 1..=(movement_magnitude + 1) as isize {
-        let current_cell = (x as isize + direction.0 * i, y as isize + direction.1 * i);
+        let current_cell = (
+            cell_pos.0 as isize + direction.0 * i,
+            cell_pos.1 as isize + direction.1 * i,
+        );
         if in_bounds(current_cell.0, current_cell.1)
             && is_empty(
                 cells,
@@ -454,11 +553,7 @@ fn furthest_by_vector(
                 empty_types,
             )
         {
-            closest = Some(CellMoveResult {
-                moved_to_type: cells[x][y].ty,
-                x: current_cell.0 as usize,
-                y: current_cell.1 as usize
-            });
+            closest = Some((current_cell.0 as usize, current_cell.1 as usize))
         }
         // not breaking causes clipping but breaking makes everything funny. idc im doing it
         // else {
@@ -695,7 +790,7 @@ fn put_cell(
                 cells,
                 x as usize,
                 y as usize,
-                &[CellType::Air, CellType::Water, CellType::Smoke],
+                &[CellType::Air, CellType::Smoke, CellType::Water],
             ) {
                 cells[x as usize][y as usize] = Cell::from(selected_cell_type, rng)
             }
@@ -737,7 +832,7 @@ fn main() {
     event_loop.run(move |event, _, control_flow| {
         if let Event::RedrawEventsCleared = event {
             if let Err(err) = pixels.render() {
-                println!("ERROR: {}", err.to_string());
+                println!("ERROR: {}", err);
                 *control_flow = ControlFlow::Exit;
                 return;
             }
