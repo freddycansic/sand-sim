@@ -833,9 +833,7 @@ fn main() {
 
     let time_per_frame_microseconds: u64 = (1_000_000.0 / max_fps as f32) as u64;
 
-    let mut last_redraw = Instant::now()
-        .checked_sub(Duration::from_micros(time_per_frame_microseconds))
-        .unwrap();
+    let mut last_redraw = Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         if let Event::RedrawEventsCleared = event {
