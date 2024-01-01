@@ -8,6 +8,8 @@ Set framerate limit using args. Default is vsync.
 ### Controls
 `lmb` to draw selected pixel type.
 
+`rmb` to delete pixels.
+
 `1` - `6` to select pixel type.
 
 `scroll` to change cursor size.
