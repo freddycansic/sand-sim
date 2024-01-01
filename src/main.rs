@@ -1,19 +1,18 @@
-use std::{
-    f32::consts::PI,
-    time::{Duration, Instant},
-    usize, vec,
-};
+mod input;
+
+use std::time::{Duration, Instant};
+use std::{f32::consts::PI, usize, vec};
 
 use enum_iterator::{all, Sequence};
 use fastrand::Rng;
 use pixels::{Pixels, SurfaceTexture};
+use winit::event::{ElementState, KeyboardInput, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::{
     dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
     window::WindowBuilder,
 };
-use winit_input_helper::WinitInputHelper;
 
 const WIDTH: usize = 400;
 const HEIGHT: usize = 300;
@@ -753,6 +752,26 @@ fn draw_frame(
     draw_cursor(frame, cursor_position, cursor_radius);
 }
 
+fn cursor_region_cell_coordinates(
+    cursor_position: (usize, usize),
+    cursor_radius: f32,
+) -> impl Iterator<Item = (usize, usize)> {
+    let cursor_position = (cursor_position.0 as i32, cursor_position.1 as i32);
+    let cursor_radius = cursor_radius as i32;
+
+    let x_start = (cursor_position.0 - cursor_radius).max(0);
+    let x_end = (cursor_position.0 + cursor_radius).min(WIDTH as i32);
+    let y_start = (cursor_position.1 - cursor_radius).max(0);
+    let y_end = (cursor_position.1 + cursor_radius).min(HEIGHT as i32);
+
+    (x_start..x_end)
+        .flat_map(move |x| (y_start..y_end).map(move |y| (x, y)))
+        .filter(move |&(x, y)| {
+            (cursor_position.0 - x).pow(2) + (cursor_position.1 - y).pow(2) <= cursor_radius.pow(2)
+        })
+        .map(move |(x, y)| (x as usize, y as usize))
+}
+
 fn put_cell(
     cells: &mut [Vec<Cell>],
     selected_cell_type: CellType,
@@ -760,46 +779,41 @@ fn put_cell(
     cursor_radius: f32,
     rng: &Rng,
 ) {
-    let cursor_position = (cursor_position.0 as i32, cursor_position.1 as i32);
-    let cursor_radius = cursor_radius as i32;
-
-    for x in ((cursor_position.0 - cursor_radius).max(0))
-        ..((cursor_position.0 + cursor_radius).min(WIDTH as i32))
-    {
-        for y in ((cursor_position.1 - cursor_radius).max(0))
-            ..((cursor_position.1 + cursor_radius).min(HEIGHT as i32))
-        {
-            if (cursor_position.0 - x).pow(2) + (cursor_position.1 - y).pow(2)
-                > cursor_radius.pow(2)
-            {
-                continue;
-            }
-
-            match selected_cell_type {
-                CellType::Sand | CellType::Water | CellType::Fire | CellType::Smoke => {
-                    if rng.f32() > 0.125 {
-                        continue;
-                    }
+    for (x, y) in cursor_region_cell_coordinates(cursor_position, cursor_radius) {
+        match selected_cell_type {
+            CellType::Sand | CellType::Water | CellType::Fire | CellType::Smoke => {
+                if rng.f32() > 0.125 {
+                    continue;
                 }
-                _ => (),
             }
-
-            // place cells only in fluids
-            if is_empty(
-                cells,
-                x as usize,
-                y as usize,
-                &[CellType::Air, CellType::Smoke, CellType::Water],
-            ) {
-                cells[x as usize][y as usize] = Cell::from(selected_cell_type, rng)
-            }
+            _ => (),
         }
+
+        // place cells only in fluids
+        if is_empty(
+            cells,
+            x,
+            y,
+            &[CellType::Air, CellType::Smoke, CellType::Water],
+        ) {
+            cells[x][y] = Cell::from(selected_cell_type, rng)
+        }
+    }
+}
+
+fn remove_cells(
+    cells: &mut [Vec<Cell>],
+    cursor_position: (usize, usize),
+    cursor_radius: f32,
+    rng: &Rng,
+) {
+    for (x, y) in cursor_region_cell_coordinates(cursor_position, cursor_radius) {
+        cells[x][y] = Cell::from(CellType::Air, rng);
     }
 }
 
 fn main() {
     let event_loop = EventLoop::new();
-    let mut input = WinitInputHelper::new();
 
     let window = {
         let size = LogicalSize::new(WIDTH as f64, HEIGHT as f64);
@@ -820,34 +834,90 @@ fn main() {
     };
 
     let rng = Rng::new();
+
     let mut cells = vec![vec![Cell::from(CellType::Air, &rng); HEIGHT]; WIDTH];
     let mut cursor_radius = 3_f32;
-    let mut cursor_position = (0, 0);
+    let mut cursor_position = (WIDTH / 2, HEIGHT / 2);
+    let mut lmb_down = false;
+    let mut rmb_down = false;
     let mut current_cell_type = CellType::Sand;
 
-    let max_fps: u32 = if let Some(fps) = std::env::args().skip(1).next() {
+    let max_fps = if let Some(fps) = std::env::args().nth(1) {
         fps.parse::<u32>().unwrap()
     } else {
+        // unlimited
         0
     };
 
-    let time_per_frame_microseconds: u64 = (1_000_000.0 / max_fps as f32) as u64;
+    let time_per_frame_micros = (1_000_000.0 / max_fps as f32) as u64;
 
     let mut last_redraw = Instant::now();
 
-    event_loop.run(move |event, _, control_flow| {
-        if let Event::RedrawEventsCleared = event {
-            if let Err(err) = pixels.render() {
-                println!("ERROR: {}", err);
-                *control_flow = ControlFlow::Exit;
-                return;
+    event_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent { ref event, .. } => match event {
+            WindowEvent::CloseRequested => control_flow.set_exit(),
+            WindowEvent::MouseInput { button, state, .. } => match button {
+                MouseButton::Left => lmb_down = *state == ElementState::Pressed,
+                MouseButton::Right => rmb_down = *state == ElementState::Pressed,
+                _ => (),
+            },
+            WindowEvent::MouseWheel {
+                delta: MouseScrollDelta::LineDelta(_, dy),
+                ..
+            } => {
+                let cursor_radius_step = 3.0;
+
+                if *dy != 0.0 {
+                    cursor_radius += dy * cursor_radius_step;
+                    cursor_radius = cursor_radius_step.max(cursor_radius);
+                }
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                cursor_position = pixels
+                    .window_pos_to_pixel((position.x as f32, position.y as f32))
+                    .unwrap_or_else(|pos| pixels.clamp_pixel_pos(pos));
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        virtual_keycode: Some(virtual_keycode),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => match virtual_keycode {
+                VirtualKeyCode::Escape => control_flow.set_exit(),
+                VirtualKeyCode::Key1 => current_cell_type = CellType::Sand,
+                VirtualKeyCode::Key2 => current_cell_type = CellType::Water,
+                VirtualKeyCode::Key3 => current_cell_type = CellType::Wood,
+                VirtualKeyCode::Key4 => current_cell_type = CellType::Fire,
+                VirtualKeyCode::Key5 => current_cell_type = CellType::Smoke,
+                VirtualKeyCode::Key6 => current_cell_type = CellType::Steam,
+                _ => (),
+            },
+            _ => (),
+        },
+        Event::MainEventsCleared => window.request_redraw(),
+        Event::RedrawRequested(_) => {
+            let delta_micros = last_redraw.elapsed().as_micros() as u64;
 
-            let elapsed = last_redraw.elapsed().as_micros() as u64;
-            let delta_time_microseconds = Instant::now().duration_since(last_redraw).as_micros();
+            if delta_micros > time_per_frame_micros || max_fps == 0 {
+                // tick the simulation
+                if lmb_down {
+                    put_cell(
+                        &mut cells,
+                        current_cell_type,
+                        cursor_position,
+                        cursor_radius,
+                        &rng,
+                    );
+                }
 
-            if elapsed > time_per_frame_microseconds || max_fps == 0 {
-                last_redraw = Instant::now();
+                if rmb_down {
+                    remove_cells(&mut cells, cursor_position, cursor_radius, &rng)
+                }
+
+                update_cells(&mut cells, &rng);
 
                 draw_frame(
                     &mut pixels,
@@ -856,80 +926,31 @@ fn main() {
                     cursor_position,
                     cursor_radius,
                 );
-                update_cells(&mut cells, &rng);
 
-                let delta_time_milliseconds = delta_time_microseconds as f32 / 1000.0;
+                if let Err(error) = pixels.render() {
+                    eprintln!("{error}");
+                    control_flow.set_exit();
+                }
+
+                let delta_millis = delta_micros as f32 / 1000.0;
                 window.set_title(
                     format!(
                         "Sand Sim: {:.2} FPS, {:.2} ms per frame",
-                        1000.0 / delta_time_milliseconds,
-                        delta_time_milliseconds
+                        1000.0 / delta_millis,
+                        delta_millis
                     )
                     .as_str(),
-                )
-            };
-
-            let deadline = last_redraw
-                .checked_add(Duration::from_micros(time_per_frame_microseconds))
-                .unwrap();
-            *control_flow = ControlFlow::WaitUntil(deadline);
-        }
-
-        cursor_position = input
-            .mouse()
-            .map(|(mx, my)| {
-                let (mx_i, my_i) = pixels
-                    .window_pos_to_pixel((mx, my))
-                    .unwrap_or_else(|pos| pixels.clamp_pixel_pos(pos));
-
-                (mx_i, my_i)
-            })
-            .unwrap_or_default();
-
-        if input.update(&event) {
-            if input.key_pressed(VirtualKeyCode::Escape)
-                || input.close_requested()
-                || input.destroyed()
-            {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-
-            if input.mouse_held(0) {
-                put_cell(
-                    &mut cells,
-                    current_cell_type,
-                    cursor_position,
-                    cursor_radius,
-                    &rng,
                 );
-            }
 
-            // note: if statements must follow order of declaration in the CellType enum
-            // i cant make this procedural since VirtualKeyCode cannot be constructed from an integer primitive
-            if input.key_pressed(VirtualKeyCode::Key1) {
-                current_cell_type = CellType::Sand;
-            } else if input.key_pressed(VirtualKeyCode::Key2) {
-                current_cell_type = CellType::Water;
-            } else if input.key_pressed(VirtualKeyCode::Key3) {
-                current_cell_type = CellType::Wood;
-            } else if input.key_pressed(VirtualKeyCode::Key4) {
-                current_cell_type = CellType::Fire;
-            } else if input.key_pressed(VirtualKeyCode::Key5) {
-                current_cell_type = CellType::Smoke
-            } else if input.key_pressed(VirtualKeyCode::Key6) {
-                current_cell_type = CellType::Steam
-            }
+                last_redraw = Instant::now();
+            } else {
+                let deadline = last_redraw
+                    .checked_add(Duration::from_micros(time_per_frame_micros))
+                    .unwrap();
 
-            let scroll_diff = input.scroll_diff();
-            let cursor_radius_step = 3.0;
-
-            if scroll_diff != 0.0 {
-                cursor_radius += scroll_diff * cursor_radius_step;
-                cursor_radius = cursor_radius_step.max(cursor_radius);
+                control_flow.set_wait_until(deadline);
             }
         }
-
-        window.request_redraw()
+        _ => (),
     });
 }
