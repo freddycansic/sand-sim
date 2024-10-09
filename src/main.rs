@@ -1,5 +1,3 @@
-mod input;
-
 use std::time::{Duration, Instant};
 use std::{f32::consts::PI, usize, vec};
 
